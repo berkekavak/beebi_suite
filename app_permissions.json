@@ -1,0 +1,12 @@
+{
+  "access_control_list": [
+    {
+      "user_name": "someone@beebi-consulting.com",
+      "permission_level": "CAN_USE"
+    },
+    {
+      "group_name": "data-team",
+      "permission_level": "CAN_USE"
+    }
+  ]
+}

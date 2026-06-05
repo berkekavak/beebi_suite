@@ -1,0 +1,12 @@
+{
+  "resources": [
+    {
+      "name": "sql_warehouse",
+      "description": "SQL warehouse used to read and write Unity Catalog tables",
+      "sql_warehouse": {
+        "id": "736a361276432aec",
+        "permission": "CAN_USE"
+      }
+    }
+  ]
+}

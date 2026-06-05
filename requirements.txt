@@ -6,3 +6,5 @@ streamlit>=1.30
 plotly>=5.18
 openpyxl>=3.1
 statsmodels>=0.14
+databricks-sql-connector>=3.0
+databricks-sdk>=0.20

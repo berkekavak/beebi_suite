@@ -255,10 +255,22 @@ def target_conditioned_categorical(
     return pd.concat(trimmed, ignore_index=True)
 
 
+# Mutual-information estimation is the dominant cost on wide tables: its
+# per-feature kNN / contingency work scales with row count, so on a 700-column
+# table over tens of thousands of rows it can take many minutes. MI and the
+# per-feature tests are statistical estimates, and a ~10k-row sample is plenty
+# stable, so we cap the rows fed into them. Cardinality/identity stats below are
+# still computed on the FULL frame so unique_ratio / id_like stay exact.
+_MI_SAMPLE_ROWS = 10_000
+
+
 def feature_importance(
     df: pd.DataFrame, target: str, task: TaskType
 ) -> pd.DataFrame:
     """Mutual information + simple statistical test per feature vs target."""
+    full_df = df
+    if len(df) > _MI_SAMPLE_ROWS:
+        df = df.sample(_MI_SAMPLE_ROWS, random_state=42)
     numeric_cols, cat_cols = _split_columns(df, target)
 
     # Build feature matrix (encode categoricals, impute)
@@ -360,8 +372,8 @@ def feature_importance(
             p_values.append(np.nan)
             test_names.append("-")
 
-    n_rows = len(df)
-    unique_counts = [int(df[f].nunique(dropna=True)) for f in feat_names]
+    n_rows = len(full_df)
+    unique_counts = [int(full_df[f].nunique(dropna=True)) for f in feat_names]
     unique_ratios = [round(u / max(n_rows, 1), 4) for u in unique_counts]
     # Flag columns that look like row identifiers: very high cardinality
     # relative to row count (>= 95% unique). These inflate MI / chi2 spuriously.
