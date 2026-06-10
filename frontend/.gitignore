@@ -1,0 +1,9 @@
+/node_modules
+/.next
+.env.local
+npm-debug.log*
+
+# NOTE: /out (the static build) is intentionally NOT ignored.
+# `databricks sync` skips .gitignored paths, and the deployed app must include
+# the built frontend. Build it (npm run build) before deploying. You may either
+# commit /out or leave it untracked — both get synced as long as it's not ignored.

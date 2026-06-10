@@ -1,10 +1,20 @@
+# --- profiling engine (unchanged) ---
 pandas>=2.0
 numpy>=1.24
 scipy>=1.10
 scikit-learn>=1.3
-streamlit>=1.30
-plotly>=5.18
 openpyxl>=3.1
-statsmodels>=0.14
+
+# --- API backend ---
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.5
+
+# --- Databricks access ---
 databricks-sql-connector>=3.0
 databricks-sdk>=0.20
+
+# --- legacy Streamlit UI (app.py / cli.py) ---
+# The new UI is React (frontend/) served by FastAPI; Streamlit is no longer
+# deployed. To still run the old app.py locally during the transition:
+#   pip install "streamlit>=1.30" "plotly>=5.18" "statsmodels>=0.14"

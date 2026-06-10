@@ -1,79 +1,126 @@
-# Data Profiler
+# BeeBI Intelligence Suite — Data Profiler
 
-Upload a dataset, pick a target column, and get a complete statistical profile — distributions, missing values, target-conditioned stats, feature importance, and correlations.
+A Databricks-native data profiling tool with a modern React UI. Pick a Unity
+Catalog table, profile it against a target column, explore distributions and
+feature importance, and write an ML-ready feature summary back as a Delta table.
 
-## Install
+The profiler is the first tool in a growing suite — the app shell is built so new
+tools slot in as their own backend router + frontend route.
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────┐
+│  FastAPI (Python)                              │
+│  ├── profiler.py        ← pure analysis engine │   one Databricks App,
+│  ├── backend/           ← API + Databricks I/O │   Python runtime
+│  │   └── /api/*  JSON endpoints                │
+│  └── serves frontend/out/ as static files ─────┼──┐
+└──────────────────────────────────────────────┘  │
+        ▲ build output                              │
+┌──────────────────────────────────────────────┐  │
+│  Next.js (React, static export) → frontend/out │◄─┘
+└──────────────────────────────────────────────┘
+```
+
+The Python heavy-lifting (pandas / scipy / scikit-learn) stays in Python; only
+the presentation layer is Node/React. Next.js is built to **static HTML/JS**
+(`output: 'export'`), which FastAPI serves — so the whole product deploys as a
+**single Databricks App** on the Python runtime, exactly like the old Streamlit
+app. There is no Node process at runtime.
+
+## Project layout
+
+```
+beebi_profiler/
+├── profiler.py            # core analysis (unchanged, pure functions)
+├── cli.py                 # command-line interface (unchanged)
+├── backend/               # FastAPI app
+│   ├── main.py            # entrypoint: mounts /api and serves frontend/out
+│   ├── databricks_client.py
+│   ├── ml_ready.py
+│   ├── profiling.py
+│   ├── serialize.py
+│   └── routers/{catalog,profiler}.py
+├── frontend/              # Next.js UI (React + Tailwind + Plotly)
+│   ├── app/               # routes: / (dashboard), /profiler
+│   ├── components/
+│   └── lib/
+├── app.yaml               # Databricks Apps: runs uvicorn
+└── requirements.txt
+```
+
+## Local development
+
+Run the API and the UI as two processes (two ports — only in dev):
 
 ```bash
+# 1. Backend (port 8000)
 pip install -r requirements.txt
+uvicorn backend.main:app --reload --port 8000
+
+# 2. Frontend (port 3000) — in another terminal
+cd frontend
+cp .env.local.example .env.local      # points the UI at http://localhost:8000
+npm install
+npm run dev
 ```
 
-## Run the web UI
+Open http://localhost:3000. (Browsing Unity Catalog needs Databricks auth /
+`DATABRICKS_WAREHOUSE_ID`; locally use a `.databrickscfg` profile or env vars.)
+
+## Build for production
 
 ```bash
-streamlit run app.py
+cd frontend
+npm install
+npm run build          # → frontend/out/ (static site)
 ```
 
-Then open the URL Streamlit prints (usually `http://localhost:8501`), upload a CSV/Excel/Parquet file, select your target column, and click **Run profile**.
+Then the single FastAPI process serves both API and UI:
 
-## Run from the command line
+```bash
+uvicorn backend.main:app --port 8000   # open http://localhost:8000
+```
+
+## Deploy to Databricks Apps
+
+1. Build the frontend (`npm run build`) so `frontend/out/` exists.
+2. Sync the project and deploy — `app.yaml` runs `uvicorn backend.main:app`.
+3. Bind a SQL Warehouse via the app's **Resources** tab (provides
+   `DATABRICKS_WAREHOUSE_ID`).
+
+> `frontend/out/` **must** be present at deploy time. `databricks sync` skips
+> `.gitignore`d paths, so `out/` is deliberately not ignored. Build it before
+> deploying (or build it in CI). `node_modules/` and `.next/` are ignored.
+
+## CLI / library use (unchanged)
 
 ```bash
 python cli.py data.csv --target churn
-python cli.py data.csv --target price --task regression --output my_report.xlsx
+python cli.py data.csv --target price --task regression --output report.xlsx
 ```
-
-## Use as a library
 
 ```python
 import pandas as pd
 from profiler import profile
 
-df = pd.read_csv("data.csv")
-result = profile(df, target="churn")
-
-print(result.overview)
-print(result.numeric_stats)
+result = profile(pd.read_csv("data.csv"), target="churn")
 print(result.feature_importance)
 ```
 
 ## What it computes
 
-**Overview:** rows, columns, memory, duplicates, missing %, dtypes.
+Overview (rows/cols/memory/duplicates/missing), target analysis (class
+distribution + imbalance, or regression stats), per-feature numeric &
+categorical stats, target-conditioned analysis, feature importance (mutual
+information + Pearson / ANOVA F / chi-square), missing-value report, numeric
+correlation matrix, and an ML-ready per-column summary (kept/dropped with
+reasons) written back to Delta or exported as CSV / multi-sheet Excel.
 
-**Target analysis:**
-- Classification → class distribution + imbalance ratio
-- Regression → mean / std / quantiles / skew / kurtosis
+## Migrating from the old Streamlit app
 
-**Per-feature stats:**
-- Numeric: count, mean, std, min/q25/median/q75/max, skew, kurtosis, IQR outliers, zeros
-- Categorical: unique, top value, top frequency %, mode dominance
-
-**Target-conditioned analysis:**
-- Classification → per-class means & stds for numeric features, P(target | category) for categoricals
-- Regression → Pearson + Spearman correlations with target, per-category target means
-
-**Feature importance:**
-- Mutual information (non-linear dependence)
-- Pearson r (numeric → numeric)
-- ANOVA F-test (numeric → categorical target, or categorical → numeric target)
-- Chi-square (categorical → categorical)
-
-**Missing values:** per-column missing counts, percentages, and visualizations.
-
-**Correlations:** Pearson correlation matrix across all numeric columns.
-
-## Output
-
-The web UI shows everything interactively with Plotly charts. Click **Download full report (Excel)** to export a multi-sheet `.xlsx` with all tables. The CLI writes the same Excel report directly.
-
-## File structure
-
-```
-data_profiler/
-├── profiler.py      # Core analysis logic (pure functions, no UI deps)
-├── app.py           # Streamlit web UI
-├── cli.py           # Command-line interface
-├── requirements.txt
-└── README.md
-```
+`app.py` (Streamlit) is retained during the transition but no longer deployed —
+`app.yaml` now runs FastAPI. To run the legacy UI locally:
+`pip install streamlit plotly statsmodels && streamlit run app.py`. Delete
+`app.py` once you're happy with the new UI.

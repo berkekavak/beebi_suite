@@ -1,0 +1,56 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-cream text-ink font-sans antialiased;
+}
+
+/* Subtle honeycomb texture for the sidebar / hero accents */
+.honeycomb {
+  background-color: #1a1714;
+  background-image: radial-gradient(
+      circle at 50% 50%,
+      rgba(250, 219, 73, 0.1) 0,
+      rgba(250, 219, 73, 0.1) 2px,
+      transparent 2px
+    ),
+    radial-gradient(
+      circle at 0% 0%,
+      rgba(250, 219, 73, 0.07) 0,
+      rgba(250, 219, 73, 0.07) 2px,
+      transparent 2px
+    );
+  background-size: 22px 22px;
+}
+
+/* Thin, branded scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #d8cab0;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c2af8f;
+  background-clip: content-box;
+}
+
+.table-scroll {
+  overflow: auto;
+  max-height: 460px;
+}
