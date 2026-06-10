@@ -1,0 +1,52 @@
+name: Keep Databricks app alive
+
+# External watchdog: every few minutes, check the Databricks App's compute and
+# app status, and restart it if it's down. Runs on GitHub's infrastructure, so
+# it can bring the app back even when the Databricks workspace paused it.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   DATABRICKS_HOST   e.g. https://dbc-xxxxxxxx.cloud.databricks.com
+#   DATABRICKS_TOKEN  a PAT (or service-principal token) with CAN_MANAGE on the app
+
+on:
+  schedule:
+    - cron: "*/5 * * * *" # every 5 minutes (GitHub may delay/coalesce runs)
+  workflow_dispatch: {} # allow manual "Run workflow" from the Actions tab
+
+concurrency:
+  group: keep-app-alive
+  cancel-in-progress: false
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restart app if not healthy
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+          APP_NAME: dataprofiler
+        run: |
+          set -euo pipefail
+          if [ -z "${DATABRICKS_HOST:-}" ] || [ -z "${DATABRICKS_TOKEN:-}" ]; then
+            echo "Secrets DATABRICKS_HOST / DATABRICKS_TOKEN not set yet — skipping."
+            exit 0
+          fi
+          host="${DATABRICKS_HOST%/}"
+
+          resp=$(curl -sf -H "Authorization: Bearer $DATABRICKS_TOKEN" \
+            "$host/api/2.0/apps/$APP_NAME") || { echo "status query failed"; exit 1; }
+          compute=$(echo "$resp" | jq -r '.compute_status.state // "UNKNOWN"')
+          appst=$(echo "$resp" | jq -r '.app_status.state // "UNKNOWN"')
+          echo "compute=$compute app=$appst"
+
+          if [ "$compute" = "ACTIVE" ] && [ "$appst" = "RUNNING" ]; then
+            echo "Healthy — nothing to do."
+            exit 0
+          fi
+
+          echo "Not healthy → requesting start…"
+          curl -sf -X POST -H "Authorization: Bearer $DATABRICKS_TOKEN" \
+            "$host/api/2.0/apps/$APP_NAME/start" \
+            && echo "Start requested." \
+            || { echo "Start failed (possible account/billing hold)."; exit 1; }
