@@ -32,7 +32,7 @@ app. There is no Node process at runtime.
 ## Project layout
 
 ```
-beebi_profiler/
+beebi_suite/
 ├── profiler.py            # core analysis (unchanged, pure functions)
 ├── cli.py                 # command-line interface (unchanged)
 ├── backend/               # FastAPI app
