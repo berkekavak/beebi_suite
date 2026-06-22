@@ -4,13 +4,20 @@ name: Keep Databricks app alive
 # app status, and restart it if it's down. Runs on GitHub's infrastructure, so
 # it can bring the app back even when the Databricks workspace paused it.
 #
-# Required repository secrets (Settings → Secrets and variables → Actions):
-#   DATABRICKS_HOST   e.g. https://dbc-xxxxxxxx.cloud.databricks.com
-#   DATABRICKS_TOKEN  a PAT (or service-principal token) with CAN_MANAGE on the app
+# Auth: OAuth machine-to-machine (service principal). Personal access tokens
+# (PATs) are disabled in this org, so we exchange a service-principal
+# client_id/client_secret for a short-lived token on every run.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   DATABRICKS_HOST           e.g. https://dbc-xxxxxxxx.cloud.databricks.com
+#   DATABRICKS_CLIENT_ID      service principal Application/Client ID
+#   DATABRICKS_CLIENT_SECRET  OAuth secret generated for that service principal
+# The service principal must have CAN_MANAGE on the app.
 
 on:
   schedule:
-    - cron: "*/5 * * * *" # every 5 minutes (GitHub may delay/coalesce runs)
+    - cron: "*/5 * * * *" # GitHub heavily coalesces these (often hourly+),
+                          # so each run also polls several times in-loop below.
   workflow_dispatch: {} # allow manual "Run workflow" from the Actions tab
 
 concurrency:
@@ -24,29 +31,68 @@ jobs:
       - name: Restart app if not healthy
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-          APP_NAME: dataprofiler
+          DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+          DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+          APP_NAME: suite
+          # How many in-run checks and the gap between them. 6 checks x 50s
+          # gives ~5 min of coverage per trigger, smoothing over cron delays.
+          CHECKS: "6"
+          INTERVAL_SECONDS: "50"
         run: |
           set -euo pipefail
-          if [ -z "${DATABRICKS_HOST:-}" ] || [ -z "${DATABRICKS_TOKEN:-}" ]; then
-            echo "Secrets DATABRICKS_HOST / DATABRICKS_TOKEN not set yet — skipping."
-            exit 0
+
+          # Fail loudly if not configured, so a misconfigured watchdog shows up
+          # as a red run instead of silently never restarting the app.
+          missing=""
+          [ -z "${DATABRICKS_HOST:-}" ] && missing="$missing DATABRICKS_HOST"
+          [ -z "${DATABRICKS_CLIENT_ID:-}" ] && missing="$missing DATABRICKS_CLIENT_ID"
+          [ -z "${DATABRICKS_CLIENT_SECRET:-}" ] && missing="$missing DATABRICKS_CLIENT_SECRET"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required secret(s):$missing"
+            exit 1
           fi
           host="${DATABRICKS_HOST%/}"
 
-          resp=$(curl -sf -H "Authorization: Bearer $DATABRICKS_TOKEN" \
-            "$host/api/2.0/apps/$APP_NAME") || { echo "status query failed"; exit 1; }
-          compute=$(echo "$resp" | jq -r '.compute_status.state // "UNKNOWN"')
-          appst=$(echo "$resp" | jq -r '.app_status.state // "UNKNOWN"')
-          echo "compute=$compute app=$appst"
+          get_token() {
+            curl -sf -X POST "$host/oidc/v1/token" \
+              -u "$DATABRICKS_CLIENT_ID:$DATABRICKS_CLIENT_SECRET" \
+              -d "grant_type=client_credentials&scope=all-apis" \
+              | jq -r '.access_token'
+          }
 
-          if [ "$compute" = "ACTIVE" ] && [ "$appst" = "RUNNING" ]; then
-            echo "Healthy — nothing to do."
-            exit 0
+          check_once() {
+            local token="$1"
+            local resp compute appst
+            resp=$(curl -sf -H "Authorization: Bearer $token" \
+              "$host/api/2.0/apps/$APP_NAME") || { echo "status query failed"; return 1; }
+            compute=$(echo "$resp" | jq -r '.compute_status.state // "UNKNOWN"')
+            appst=$(echo "$resp" | jq -r '.app_status.state // "UNKNOWN"')
+            echo "compute=$compute app=$appst"
+
+            if [ "$compute" = "ACTIVE" ] && [ "$appst" = "RUNNING" ]; then
+              echo "Healthy - nothing to do."
+              return 0
+            fi
+
+            echo "Not healthy -> requesting start..."
+            curl -sf -X POST -H "Authorization: Bearer $token" \
+              "$host/api/2.0/apps/$APP_NAME/start" \
+              && echo "Start requested." \
+              || { echo "Start failed (possible account/billing hold)."; return 1; }
+          }
+
+          token=$(get_token)
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "::error::OAuth token exchange failed - check client id/secret."
+            exit 1
           fi
 
-          echo "Not healthy → requesting start…"
-          curl -sf -X POST -H "Authorization: Bearer $DATABRICKS_TOKEN" \
-            "$host/api/2.0/apps/$APP_NAME/start" \
-            && echo "Start requested." \
-            || { echo "Start failed (possible account/billing hold)."; exit 1; }
+          i=1
+          while [ "$i" -le "$CHECKS" ]; do
+            echo "--- check $i/$CHECKS ---"
+            check_once "$token" || true
+            if [ "$i" -lt "$CHECKS" ]; then
+              sleep "$INTERVAL_SECONDS"
+            fi
+            i=$((i + 1))
+          done
