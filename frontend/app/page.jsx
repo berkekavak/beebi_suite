@@ -25,10 +25,11 @@ const TOOLS = [
     ready: false,
   },
   {
+    href: "/monitor/",
     title: "Model Monitor",
     desc: "Track production model performance and data drift over time.",
     icon: "◷",
-    ready: false,
+    ready: true,
   },
 ];
 

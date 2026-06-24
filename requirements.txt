@@ -13,6 +13,9 @@ pydantic>=2.5
 # --- Databricks access ---
 databricks-sql-connector>=3.0
 databricks-sdk>=0.20
+# pyarrow is no longer bundled with databricks-sql-connector >=4.0, but the
+# table-read path uses fetchall_arrow().to_pandas(), so require it explicitly.
+pyarrow>=14
 
 # --- legacy Streamlit UI (app.py / cli.py) ---
 # The new UI is React (frontend/) served by FastAPI; Streamlit is no longer

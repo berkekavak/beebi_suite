@@ -33,6 +33,14 @@ export const api = {
   profile: (payload) => request("/api/profile", { method: "POST", body: payload }),
   column: (payload) => request("/api/column", { method: "POST", body: payload }),
   save: (payload) => request("/api/save", { method: "POST", body: payload }),
+  // Model Monitor
+  monitorRun: (tool) => request("/api/monitor/run", { method: "POST", body: { tool } }),
+  monitorCancel: (runId) =>
+    request("/api/monitor/cancel", { method: "POST", body: { run_id: runId } }),
+  monitorStatus: (runId) =>
+    request(`/api/monitor/run-status?run_id=${encodeURIComponent(runId)}`),
+  monitorResults: (tool) =>
+    request("/api/monitor/results", { method: "POST", body: { tool } }),
   // returns a download URL for the Excel export (POST), handled via fetch+blob
   exportExcel: async (payload) => {
     const res = await fetch(BASE + "/api/export", {

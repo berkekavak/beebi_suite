@@ -204,3 +204,39 @@ def write_summary_table(df: pd.DataFrame, fqn: str) -> int:
         ]
         cur.executemany(f"INSERT INTO {fqn} VALUES ({placeholders})", rows)
     return len(rows)
+
+
+# ---------- Databricks Jobs (Model Monitor) ----------
+def run_job(job_id: int) -> int:
+    """Trigger a job run and return the new run_id (does not block)."""
+    w = get_workspace_client()
+    waiter = w.jobs.run_now(job_id=job_id)
+    return int(waiter.run_id)
+
+
+def cancel_run(run_id: int) -> None:
+    """Request cancellation of a job run."""
+    w = get_workspace_client()
+    w.jobs.cancel_run(run_id=run_id)
+
+
+def get_run_status(run_id: int) -> dict:
+    """Current state of a job run, normalized for the UI."""
+    w = get_workspace_client()
+    run = w.jobs.get_run(run_id=run_id)
+    state = run.state
+    life = (
+        state.life_cycle_state.value
+        if state and state.life_cycle_state
+        else None
+    )
+    result = (
+        state.result_state.value if state and state.result_state else None
+    )
+    return {
+        "run_id": int(run_id),
+        "life_cycle_state": life,  # PENDING / RUNNING / TERMINATING / TERMINATED ...
+        "result_state": result,  # SUCCESS / FAILED / CANCELED / TIMEDOUT
+        "state_message": state.state_message if state else None,
+        "run_page_url": run.run_page_url,
+    }

@@ -11,7 +11,7 @@ const NAV = [
   { href: "/profiler/", label: "Data Profiler", icon: "📊", ready: true },
   { href: "#", label: "Data Quality", icon: "✓", ready: false },
   { href: "#", label: "Feature Store", icon: "⬡", ready: false },
-  { href: "#", label: "Model Monitor", icon: "◷", ready: false },
+  { href: "/monitor/", label: "Model Monitor", icon: "◷", ready: true },
 ];
 
 export default function Sidebar() {

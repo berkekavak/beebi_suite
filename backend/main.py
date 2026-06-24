@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .routers import catalog, profiler
+from .routers import catalog, monitor, profiler
 
 app = FastAPI(title="BeeBI Data Profiler", version="2.0.0")
 
@@ -31,6 +31,7 @@ app.add_middleware(
 
 app.include_router(catalog.router, prefix="/api")
 app.include_router(profiler.router, prefix="/api")
+app.include_router(monitor.router, prefix="/api")
 
 
 @app.get("/api/health")
